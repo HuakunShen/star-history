@@ -1,3 +1,5 @@
+import type { Repo } from "./src/types";
+
 export function getStarDataFromGitHub(
   owner: string,
   name: string,
@@ -34,7 +36,7 @@ export function getStarsEarnedPerDay(
   name: string,
   githubToken: string,
   since: Date | null = null
-) {
+): { date: Date; stars: number }[] {
   let hasPreviousPage = true;
   let startCursor: string | undefined = undefined;
   let allDates: Date[] = [];
@@ -66,13 +68,25 @@ export function getStarsEarnedPerDay(
     const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
     const last = acc[acc.length - 1];
     if (last && +last.date === +day) {
-      last.count++;
+      last.stars++;
     } else {
-      acc.push({ date: day, count: 1 });
+      acc.push({ date: day, stars: 1 });
     }
     return acc;
-  }, [] as { date: Date; count: number }[]);
+  }, [] as { date: Date; stars: number }[]);
   return starCounts;
+}
+
+export function starsPerDayToCumulative(
+  starCounts: { date: Date; stars: number }[]
+): { date: Date; stars: number }[] {
+  let cumulativeStarCounts = starCounts.reduce((acc, { date, stars }) => {
+    const last = acc[acc.length - 1];
+    const lastCount = last?.stars ?? 0;
+    acc.push({ date, stars: lastCount + stars });
+    return acc;
+  }, [] as { date: Date; stars: number }[]);
+  return cumulativeStarCounts;
 }
 
 export function getStarHistory(
@@ -83,7 +97,7 @@ export function getStarHistory(
     since: Date | null;
     baseStars: number;
   }
-): { date: Date; count: number }[] {
+): { date: Date; stars: number }[] {
   if (!options) {
     options = {
       since: null,
@@ -97,18 +111,111 @@ export function getStarHistory(
     githubToken,
     options.since
   );
-
-  let cumulativeStarCounts = starCounts.reduce((acc, { date, count }) => {
-    const last = acc[acc.length - 1];
-    const lastCount = last?.count ?? 0;
-    acc.push({ date, count: lastCount + count });
-    return acc;
-  }, [] as { date: Date; count: number }[]);
+  let cumulativeStarCounts = starsPerDayToCumulative(starCounts);
   if (options.baseStars > 0) {
-    cumulativeStarCounts = cumulativeStarCounts.map(({ date, count }) => ({
+    cumulativeStarCounts = cumulativeStarCounts.map(({ date, stars }) => ({
       date,
-      count: count + options.baseStars,
+      stars: stars + options.baseStars,
     }));
   }
   return cumulativeStarCounts;
 }
+
+/* -------------------------------------------------------------------------- */
+/*                                  Database                                  */
+/* -------------------------------------------------------------------------- */
+
+export function repoExists(owner: string, repo: string) {
+  const repos = arrayOf(
+    new DynamicModel({
+      updated: "",
+      stars_per_day: "",
+    })
+  );
+  $app
+    .dao()
+    .db()
+    .select("repo.updated")
+    .from("repo")
+    .where($dbx.exp("LOWER(owner) = {:owner}", { owner: owner.toLowerCase() }))
+    .andWhere($dbx.exp("LOWER(repo) = {:repo}", { repo: repo.toLowerCase() }))
+    .limit(1)
+    .all(repos);
+  return repos.length > 0;
+}
+
+/**
+ * Get entire repo and all its data
+ * @param owner
+ * @param repo
+ * @returns
+ */
+export function getRepo(owner: string, repo: string): DynamicModel | null {
+  const repos = arrayOf(
+    new DynamicModel({
+      id: "",
+      updated: "",
+      created: "",
+      owner: "",
+      repo: "",
+      stars_per_day: "",
+    })
+  );
+  $app
+    .dao()
+    .db()
+    .select("repo.*")
+    .from("repo")
+    .where($dbx.exp("LOWER(owner) = {:owner}", { owner: owner.toLowerCase() }))
+    .andWhere($dbx.exp("LOWER(repo) = {:repo}", { repo: repo.toLowerCase() }))
+    .all(repos);
+  if (repos.length === 0) {
+    return null;
+  }
+  const retRepo = repos[0] as Repo & {
+    stars_per_day: string;
+    updated: string;
+    created: string;
+  };
+
+  let stars_per_day = JSON.parse(retRepo.stars_per_day);
+  if (stars_per_day === null) {
+    stars_per_day = [];
+  }
+  stars_per_day = stars_per_day.map((x: any) => ({
+    date: convertDate(x.date),
+    stars: x.stars,
+  }));
+  return {
+    ...retRepo,
+    stars_per_day,
+    updated: convertDate(retRepo.updated),
+    created: convertDate(retRepo.created),
+  };
+}
+
+export function createRepo(owner: string, repo: string) {
+  const collection = $app.dao().findCollectionByNameOrId("repo");
+  const record = new Record(collection, {
+    // bulk load the record data during initialization
+    owner: owner,
+    repo: repo,
+    stars_per_day: [],
+  });
+  $app.dao().saveRecord(record);
+}
+
+export function convertDate(pbDate: string): Date {
+  return new Date(pbDate.replace(" ", "T"));
+}
+
+/**
+ * Date to string in the format "YYYY-MM-DD"
+ * @param date
+ * @returns
+ */
+export function dateToDayString(date: Date): string {
+  return date.toISOString().split("T")[0];
+}
+
+// export function merge
