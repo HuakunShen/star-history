@@ -1,0 +1,2 @@
+serve:
+	./pocketbase serve
