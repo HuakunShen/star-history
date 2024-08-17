@@ -26,12 +26,16 @@ export enum EventTypes {
   CacheHit = "cache-hit",
 }
 
+export type BaseEvent = {
+  ip: string;
+};
+
 export type FetchDataEventPayload = {
   owner: string;
   repo: string;
   userTokenProvided: boolean;
   existingDataLength: number;
-};
+} & BaseEvent;
 
 export type CacheHitEventPayload = {
   owner: string;
@@ -40,7 +44,7 @@ export type CacheHitEventPayload = {
   existingDataLength: number;
   fetchedDataLength: number;
   mergedDataLength: number;
-};
+} & BaseEvent;
 
 /* -------------------------------------------------------------------------- */
 /*                                 Table Names                                */

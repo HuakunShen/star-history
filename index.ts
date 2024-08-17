@@ -281,6 +281,7 @@ export function handleStarHistory(
       repo: repo,
       userTokenProvided: userGhToken ? true : false,
       existingDataLength: existingData.length,
+      ip: c.realIP(),
     } as FetchDataEventPayload);
     return c.json(200, starsPerDayToCumulative(existingData)); // TODO: uncomment this
   }
@@ -334,6 +335,7 @@ export function handleStarHistory(
     existingDataLength: originalExistingDataLength,
     fetchedDataLength: data.length,
     mergedDataLength: concatData.length,
+    ip: c.realIP(),
   } as CacheHitEventPayload);
 
   return c.json(200, starsPerDayToCumulative(concatData));
