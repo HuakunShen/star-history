@@ -1,4 +1,4 @@
-import type { Repo } from "./src/types";
+import type { DayStar, Repo } from "./src/types";
 
 export function getStarDataFromGitHub(
   owner: string,
@@ -218,4 +218,86 @@ export function dateToDayString(date: Date): string {
   return date.toISOString().split("T")[0];
 }
 
-// export function merge
+export function handleStarHistory(
+  owner: string,
+  repo: string,
+  c: echo.Context,
+  userGhToken?: string
+) {
+  console.log(`owner: ${owner}, repo: ${repo}`);
+
+  // check if repo in database
+  let since: Date | null = new Date();
+  let existingData: DayStar[] = [];
+  let dbRepo = getRepo(owner, repo) as Repo | null;
+  if (dbRepo) {
+    if (dbRepo.stars_per_day !== null) {
+      // has repo, has data
+      existingData = dbRepo.stars_per_day ? dbRepo.stars_per_day : [];
+      since = dbRepo.updated;
+    } else {
+      // has repo, no data
+      since = null; // get all data
+    }
+  } else {
+    // no repo, then create repo first
+    createRepo(owner, repo);
+    dbRepo = getRepo(owner, repo) as Repo | null;
+    if (!dbRepo) {
+      return c.json(500, { error: "Unexpected Error: Error creating repo" });
+    }
+    since = null; // get all data
+  }
+  // if since is not null and it's today, then return existingData
+  if (since && dateToDayString(since) === dateToDayString(new Date())) {
+    $app
+      .logger()
+      .info(
+        `Cache hit fully, return existing data; owner: ${owner}, repo: ${repo}`
+      );
+    // return c.json(200, starsPerDayToCumulative(existingData)); // TODO: uncomment this
+  }
+
+  // fetch data
+  const envGhToken = $os.getenv("GITHUB_TOKEN");
+  if (!envGhToken || envGhToken.length === 0) {
+    return c.json(400, { error: "GITHUB_TOKEN is not set" });
+  }
+  const token = userGhToken ? userGhToken : envGhToken;
+  const data = getStarsEarnedPerDay(owner, repo, token, since);
+
+  // if last date is today, remove it
+  const lastestExistingDate =
+    existingData.length > 0 ? existingData[existingData.length - 1].date : null;
+  const now = new Date();
+
+  if (
+    lastestExistingDate &&
+    dateToDayString(lastestExistingDate) === dateToDayString(now)
+  ) {
+    data.pop();
+  }
+
+  // merge data with existingData, existingData should be older, also remove duplicates. both should be sorted
+  const originalExistingDataLength = existingData.length;
+  if (
+    lastestExistingDate &&
+    data.length &&
+    lastestExistingDate > data[0].date
+  ) {
+    // if latest existingData is newer than oldest new data, then merge them
+    const overlapIndex = existingData.findIndex(
+      (item) => dateToDayString(item.date) === dateToDayString(data[0].date)
+    );
+    if (overlapIndex > -1) {
+      // truncate existingData from overlapIndex forward
+      existingData = existingData.slice(overlapIndex);
+    }
+  }
+
+  const concatData = [...existingData, ...data];
+  const dbRepoMod = $app.dao().findRecordById("repos", dbRepo.id);
+  dbRepoMod.set("stars_per_day", JSON.stringify(concatData));
+  $app.dao().saveRecord(dbRepoMod);
+  return c.json(200, starsPerDayToCumulative(concatData));
+}

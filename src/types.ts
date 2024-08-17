@@ -11,3 +11,8 @@ export type Repo = {
       }[]
     | null;
 };
+
+export type DayStar = {
+  date: Date;
+  stars: number;
+};
