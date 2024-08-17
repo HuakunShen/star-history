@@ -24,5 +24,6 @@ routerAdd("GET", "/star-history/:owner/:repo", (c) => {
 });
 
 onModelAfterUpdate((e) => {
-  console.log("user updated...", e.model.get("email"));
-}, "users");
+  console.log(e.model.tableName());
+  console.log(e.model.id);
+}, "repos");

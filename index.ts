@@ -1,4 +1,11 @@
-import type { DayStar, Repo } from "./src/types";
+import {
+  EventTypes,
+  TableNames,
+  type CacheHitEventPayload,
+  type DayStar,
+  type FetchDataEventPayload,
+  type Repo,
+} from "./src/types";
 
 export function getStarDataFromGitHub(
   owner: string,
@@ -64,28 +71,34 @@ export function getStarsEarnedPerDay(
     }
   }
   allDates.sort((a, b) => a.getTime() - b.getTime());
-  const starCounts = allDates.reduce((acc, date) => {
-    const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const last = acc[acc.length - 1];
-    if (last && +last.date === +day) {
-      last.stars++;
-    } else {
-      acc.push({ date: day, stars: 1 });
-    }
-    return acc;
-  }, [] as { date: Date; stars: number }[]);
+  const starCounts = allDates.reduce(
+    (acc, date) => {
+      const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const last = acc[acc.length - 1];
+      if (last && +last.date === +day) {
+        last.stars++;
+      } else {
+        acc.push({ date: day, stars: 1 });
+      }
+      return acc;
+    },
+    [] as { date: Date; stars: number }[]
+  );
   return starCounts;
 }
 
 export function starsPerDayToCumulative(
   starCounts: { date: Date; stars: number }[]
 ): { date: Date; stars: number }[] {
-  let cumulativeStarCounts = starCounts.reduce((acc, { date, stars }) => {
-    const last = acc[acc.length - 1];
-    const lastCount = last?.stars ?? 0;
-    acc.push({ date, stars: lastCount + stars });
-    return acc;
-  }, [] as { date: Date; stars: number }[]);
+  let cumulativeStarCounts = starCounts.reduce(
+    (acc, { date, stars }) => {
+      const last = acc[acc.length - 1];
+      const lastCount = last?.stars ?? 0;
+      acc.push({ date, stars: lastCount + stars });
+      return acc;
+    },
+    [] as { date: Date; stars: number }[]
+  );
   return cumulativeStarCounts;
 }
 
@@ -136,7 +149,7 @@ export function repoExists(owner: string, repo: string) {
     .dao()
     .db()
     .select("repo.updated")
-    .from("repos")
+    .from(TableNames.Repos)
     .where($dbx.exp("LOWER(owner) = {:owner}", { owner: owner.toLowerCase() }))
     .andWhere($dbx.exp("LOWER(repo) = {:repo}", { repo: repo.toLowerCase() }))
     .limit(1)
@@ -165,7 +178,7 @@ export function getRepo(owner: string, repo: string): DynamicModel | null {
     .dao()
     .db()
     .select("repos.*")
-    .from("repos")
+    .from(TableNames.Repos)
     .where($dbx.exp("LOWER(owner) = {:owner}", { owner: owner.toLowerCase() }))
     .andWhere($dbx.exp("LOWER(repo) = {:repo}", { repo: repo.toLowerCase() }))
     .all(repos);
@@ -195,7 +208,7 @@ export function getRepo(owner: string, repo: string): DynamicModel | null {
 }
 
 export function createRepo(owner: string, repo: string) {
-  const collection = $app.dao().findCollectionByNameOrId("repos");
+  const collection = $app.dao().findCollectionByNameOrId(TableNames.Repos);
   const record = new Record(collection, {
     // bulk load the record data during initialization
     owner: owner,
@@ -218,14 +231,22 @@ export function dateToDayString(date: Date): string {
   return date.toISOString().split("T")[0];
 }
 
+export function logEvent(eventType: string, value: Object) {
+  const collection = $app.dao().findCollectionByNameOrId("events");
+
+  const record = new Record(collection, {
+    type: eventType,
+    value: value,
+  });
+  $app.dao().saveRecord(record);
+}
+
 export function handleStarHistory(
   owner: string,
   repo: string,
   c: echo.Context,
   userGhToken?: string
 ) {
-  console.log(`owner: ${owner}, repo: ${repo}`);
-
   // check if repo in database
   let since: Date | null = new Date();
   let existingData: DayStar[] = [];
@@ -255,7 +276,13 @@ export function handleStarHistory(
       .info(
         `Cache hit fully, return existing data; owner: ${owner}, repo: ${repo}`
       );
-    // return c.json(200, starsPerDayToCumulative(existingData)); // TODO: uncomment this
+    logEvent(EventTypes.CacheHit, {
+      owner: owner,
+      repo: repo,
+      userTokenProvided: userGhToken ? true : false,
+      existingDataLength: existingData.length,
+    } as FetchDataEventPayload);
+    return c.json(200, starsPerDayToCumulative(existingData)); // TODO: uncomment this
   }
 
   // fetch data
@@ -296,8 +323,18 @@ export function handleStarHistory(
   }
 
   const concatData = [...existingData, ...data];
-  const dbRepoMod = $app.dao().findRecordById("repos", dbRepo.id);
+  const dbRepoMod = $app.dao().findRecordById(TableNames.Repos, dbRepo.id);
   dbRepoMod.set("stars_per_day", JSON.stringify(concatData));
   $app.dao().saveRecord(dbRepoMod);
+
+  logEvent(EventTypes.FetchData, {
+    owner: owner,
+    repo: repo,
+    userTokenProvided: userGhToken ? true : false,
+    existingDataLength: originalExistingDataLength,
+    fetchedDataLength: data.length,
+    mergedDataLength: concatData.length,
+  } as CacheHitEventPayload);
+
   return c.json(200, starsPerDayToCumulative(concatData));
 }
