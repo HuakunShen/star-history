@@ -136,7 +136,7 @@ export function repoExists(owner: string, repo: string) {
     .dao()
     .db()
     .select("repo.updated")
-    .from("repo")
+    .from("repos")
     .where($dbx.exp("LOWER(owner) = {:owner}", { owner: owner.toLowerCase() }))
     .andWhere($dbx.exp("LOWER(repo) = {:repo}", { repo: repo.toLowerCase() }))
     .limit(1)
@@ -164,8 +164,8 @@ export function getRepo(owner: string, repo: string): DynamicModel | null {
   $app
     .dao()
     .db()
-    .select("repo.*")
-    .from("repo")
+    .select("repos.*")
+    .from("repos")
     .where($dbx.exp("LOWER(owner) = {:owner}", { owner: owner.toLowerCase() }))
     .andWhere($dbx.exp("LOWER(repo) = {:repo}", { repo: repo.toLowerCase() }))
     .all(repos);
@@ -195,7 +195,7 @@ export function getRepo(owner: string, repo: string): DynamicModel | null {
 }
 
 export function createRepo(owner: string, repo: string) {
-  const collection = $app.dao().findCollectionByNameOrId("repo");
+  const collection = $app.dao().findCollectionByNameOrId("repos");
   const record = new Record(collection, {
     // bulk load the record data during initialization
     owner: owner,

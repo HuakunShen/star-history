@@ -1,12 +1,23 @@
 /// <reference path="../pb_data/types.d.ts" />
 
+routerAdd("GET", "/exp", (c) => {
+  const utils = require(`${__hooks}/index.cjs`);
+  const data = utils.getStarsEarnedPerDay(
+    "CrossCopy",
+    "tauri-plugin-clipboard",
+    $os.getenv("GITHUB_TOKEN"),
+    null
+  );
+  return c.json(200, data);
+});
+
 /**
  * Sample: https://127.0.0.1:8090/star-history/crosscopy/tauri-plugin-clipboard
  */
 routerAdd("GET", "/star-history/:owner/:repo", (c) => {
   const gh_token = c.queryParam("github_token");
-  const owner = c.pathParam("owner");
-  const repo = c.pathParam("repo");
+  const owner = c.pathParam("owner").toLowerCase();
+  const repo = c.pathParam("repo").toLowerCase();
   const utils = require(`${__hooks}/index.cjs`);
 
   // check if repo in database
@@ -47,6 +58,7 @@ routerAdd("GET", "/star-history/:owner/:repo", (c) => {
   }
   const token = gh_token ? gh_token : env_token;
   const data = utils.getStarsEarnedPerDay(owner, repo, token, since);
+
   // if last date is today, remove it
   const lastestExistingDate =
     existingData.length > 0 ? existingData[existingData.length - 1].date : null;
@@ -87,7 +99,7 @@ routerAdd("GET", "/star-history/:owner/:repo", (c) => {
     "New Data": data.length,
     "Merged Data": concatData.length,
   });
-  const dbRepoMod = $app.dao().findRecordById("repo", dbRepo.id);
+  const dbRepoMod = $app.dao().findRecordById("repos", dbRepo.id);
   dbRepoMod.set("stars_per_day", JSON.stringify(concatData));
   $app.dao().saveRecord(dbRepoMod);
   return c.json(200, utils.starsPerDayToCumulative(concatData));
