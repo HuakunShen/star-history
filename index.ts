@@ -338,5 +338,11 @@ export function handleStarHistory(
     ip: c.realIP(),
   } as CacheHitEventPayload);
 
-  return c.json(200, starsPerDayToCumulative(concatData));
+  return c.json(
+    200,
+    starsPerDayToCumulative(concatData).map((x) => ({
+      stars: x.stars,
+      date: dateToDayString(x.date),
+    }))
+  );
 }

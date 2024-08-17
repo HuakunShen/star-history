@@ -14,15 +14,15 @@ routerAdd("GET", "/exp", (c) => {
 /**
  * Sample: https://127.0.0.1:8090/star-history/crosscopy/tauri-plugin-clipboard
  */
-routerAdd("GET", "/star-history/:provider/:owner/:repo", (c) => {
+routerAdd("GET", "/star-history/:owner/:repo", (c) => {
   const gh_token = c.queryParam("github_token");
-  const provider = c.pathParam("provider").toLowerCase();
+  // const provider = c.pathParam("provider").toLowerCase();
   const owner = c.pathParam("owner").toLowerCase();
   const repo = c.pathParam("repo").toLowerCase();
   $app
     .logger()
     .info(
-      `Star History Request: provider: ${provider}, owner: ${owner}, repo: ${repo}`
+      `Star History Request: owner: ${owner}, repo: ${repo}`
     );
   const utils = require(`${__hooks}/index.cjs`);
   return utils.handleStarHistory(owner, repo, c, gh_token);
