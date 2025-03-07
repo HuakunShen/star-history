@@ -70,6 +70,7 @@ export function getStarsEarnedPerDay(
       }
     }
   }
+
   allDates.sort((a, b) => a.getTime() - b.getTime());
   const starCounts = allDates.reduce(
     (acc, date) => {
@@ -146,7 +147,6 @@ export function repoExists(owner: string, repo: string) {
     })
   );
   $app
-    .dao()
     .db()
     .select("repo.updated")
     .from(TableNames.Repos)
@@ -175,7 +175,6 @@ export function getRepo(owner: string, repo: string): DynamicModel | null {
     })
   );
   $app
-    .dao()
     .db()
     .select("repos.*")
     .from(TableNames.Repos)
@@ -208,14 +207,14 @@ export function getRepo(owner: string, repo: string): DynamicModel | null {
 }
 
 export function createRepo(owner: string, repo: string) {
-  const collection = $app.dao().findCollectionByNameOrId(TableNames.Repos);
+  const collection = $app.findCollectionByNameOrId(TableNames.Repos);
   const record = new Record(collection, {
     // bulk load the record data during initialization
     owner: owner,
     repo: repo,
     stars_per_day: [],
   });
-  $app.dao().saveRecord(record);
+  $app.save(record);
 }
 
 export function convertDate(pbDate: string): Date {
@@ -232,19 +231,19 @@ export function dateToDayString(date: Date): string {
 }
 
 export function logEvent(eventType: string, value: Object) {
-  const collection = $app.dao().findCollectionByNameOrId("events");
+  const collection = $app.findCollectionByNameOrId("events");
 
   const record = new Record(collection, {
     type: eventType,
     value: value,
   });
-  $app.dao().saveRecord(record);
+  $app.save(record);
 }
 
 export function handleStarHistory(
   owner: string,
   repo: string,
-  c: echo.Context,
+  e: core.RequestEvent,
   userGhToken?: string
 ) {
   // check if repo in database
@@ -265,10 +264,11 @@ export function handleStarHistory(
     createRepo(owner, repo);
     dbRepo = getRepo(owner, repo) as Repo | null;
     if (!dbRepo) {
-      return c.json(500, { error: "Unexpected Error: Error creating repo" });
+      return e.json(500, { error: "Unexpected Error: Error creating repo" });
     }
     since = null; // get all data
   }
+
   // if since is not null and it's today, then return existingData
   if (since && dateToDayString(since) === dateToDayString(new Date())) {
     $app
@@ -281,15 +281,15 @@ export function handleStarHistory(
       repo: repo,
       userTokenProvided: userGhToken ? true : false,
       existingDataLength: existingData.length,
-      ip: c.realIP(),
+      ip: e.realIP(),
     } as FetchDataEventPayload);
-    return c.json(200, starsPerDayToCumulative(existingData)); // TODO: uncomment this
+    return e.json(200, starsPerDayToCumulative(existingData)); // TODO: uncomment this
   }
 
   // fetch data
   const envGhToken = $os.getenv("GITHUB_TOKEN");
   if (!envGhToken || envGhToken.length === 0) {
-    return c.json(400, { error: "GITHUB_TOKEN is not set" });
+    return e.json(400, { error: "GITHUB_TOKEN is not set" });
   }
   const token = userGhToken ? userGhToken : envGhToken;
   const data = getStarsEarnedPerDay(owner, repo, token, since);
@@ -324,9 +324,9 @@ export function handleStarHistory(
   }
 
   const concatData = [...existingData, ...data];
-  const dbRepoMod = $app.dao().findRecordById(TableNames.Repos, dbRepo.id);
+  const dbRepoMod = $app.findRecordById(TableNames.Repos, dbRepo.id);
   dbRepoMod.set("stars_per_day", JSON.stringify(concatData));
-  $app.dao().saveRecord(dbRepoMod);
+  $app.save(dbRepoMod);
 
   logEvent(EventTypes.FetchData, {
     owner: owner,
@@ -335,10 +335,10 @@ export function handleStarHistory(
     existingDataLength: originalExistingDataLength,
     fetchedDataLength: data.length,
     mergedDataLength: concatData.length,
-    ip: c.realIP(),
+    ip: e.realIP(),
   } as CacheHitEventPayload);
 
-  return c.json(
+  return e.json(
     200,
     starsPerDayToCumulative(concatData).map((x) => ({
       stars: x.stars,

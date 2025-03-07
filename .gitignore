@@ -203,4 +203,3 @@ pb_hooks/*
 !pb_hooks/*.pb.js
 pb_public
 tmp
-pb_migrations
